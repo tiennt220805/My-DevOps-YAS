@@ -8,10 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yas.commonlibrary.kafka.cdc.message.Product;
 import com.yas.commonlibrary.kafka.cdc.message.ProductCdcMessage;
 import com.yas.commonlibrary.kafka.cdc.message.ProductMsgKey;
+import com.yas.search.config.EnabledIfDockerAvailable;
 import com.yas.search.config.KafkaIntegrationTestConfiguration;
 import com.yas.search.config.ServiceUrlConfig;
 import com.yas.search.repository.ProductRepository;
@@ -37,12 +37,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Import(KafkaIntegrationTestConfiguration.class)
 @PropertySource("classpath:application.properties")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public class ProductCdcConsumerIT extends CdcConsumerTest<ProductMsgKey, ProductCdcMessage> {
+@EnabledIfDockerAvailable
+public class ProductCdcConsumerTest extends CdcConsumerTest<ProductMsgKey, ProductCdcMessage> {
 
     public static final String STOREFRONT_PRODUCTS_ES_PATH = "/storefront/products-es/{id}";
-
-    @Autowired
-    private ObjectMapper objectMapper;
 
     @Autowired
     private ServiceUrlConfig serviceUrlConfig;
@@ -53,7 +51,7 @@ public class ProductCdcConsumerIT extends CdcConsumerTest<ProductMsgKey, Product
     @SpyBean
     private ProductSyncDataService productSyncDataService;
 
-    public ProductCdcConsumerIT() {
+    public ProductCdcConsumerTest() {
         super(ProductMsgKey.class, ProductCdcMessage.class, "dbproduct.public.product");
     }
 
