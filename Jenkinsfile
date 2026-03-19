@@ -37,7 +37,7 @@ def runBackendSonarQube(List<String> services) {
         services.each { String service ->
             echo ">>> SonarQube scanning: ${service}"
             dir(service) {
-                sh "mvn sonar:sonar"
+                sh "mvn sonar:sonar -Dmaven.repo.local=${WORKSPACE}/.m2/repository"
             }
         }
     }
@@ -52,6 +52,9 @@ def runBackendSnyk(List<String> services) {
             echo ">>> Snyk scanning: ${service}"
             dir(service) {
                 sh 'chmod +x ./mvnw'
+                if (env.BRANCH_NAME == 'main') {
+                    sh "${snykCmd} monitor --project-name=yas-${service}"
+                }
                 sh "${snykCmd} test --severity-threshold=high"
             }
         }
@@ -109,7 +112,7 @@ pipeline {
 
     environment {
         // Use local repository within the workspace for faster caching
-        MAVEN_OPTS = "-Dmaven.repo.local=${WORKSPACE}/.m2/repository"
+        MAVEN_OPTS = "-Dmaven.repo.local=.m2/repository"
         // For Testcontainers to connect to Docker daemon in Jenkins agents
         TESTCONTAINERS_HOST_OVERRIDE = 'docker'
     }
@@ -246,7 +249,7 @@ pipeline {
                             post {
                                 always {
                                     script {
-                                        // Upload test results
+                                        // Upload test results and code coverage for all affected services
                                         junit '**/target/surefire-reports/*.xml'
                                         processCoverage(resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES))
                                     }
@@ -315,13 +318,13 @@ pipeline {
                 cleanupLocalM2Repo(3)
             }
             sh 'rm -f gitleaks'
-            cleanWs() // Clean up the workspace to save disk space
+            cleanWs()
         }
         success {
-            echo "CI Pipeline Completed Successfully!"
+            echo "[SUCCESS] CI Pipeline completed successfully!"
         }
         failure {
-            echo "CI Pipeline Failed! Check logs for compile errors, test failures, or security issues."
+            echo "[FAILURE] CI Pipeline failed! Check logs for compile errors, test failures, or security issues."
         }
     }
 }
