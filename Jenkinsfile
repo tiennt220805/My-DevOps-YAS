@@ -52,6 +52,7 @@ def runBackendSnyk(List<String> services) {
             echo ">>> Snyk scanning: ${service}"
             dir(service) {
                 sh 'chmod +x ./mvnw'
+                sh "${snykCmd} monitor --project-name=yas-${service}"
                 sh "${snykCmd} test --severity-threshold=high"
             }
         }
