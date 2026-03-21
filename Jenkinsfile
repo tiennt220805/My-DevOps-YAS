@@ -302,7 +302,7 @@ pipeline {
                     if (BUILD_BACKOFFICE || IS_ROOT_CHANGED) {
                         parallelBranches["Frontend-backoffice"] = {
                             node() {
-                                stage('Backoffice Pipeline') {
+                                stage('Pipeline: backoffice') {
                                     checkout scm
                                     runFrontendPipeline('backoffice')
                                     cleanWs()
@@ -315,7 +315,7 @@ pipeline {
                     if (BUILD_STOREFRONT || IS_ROOT_CHANGED) {
                         parallelBranches["Frontend-storefront"] = {
                             node() {
-                                stage('Storefront Pipeline') {
+                                stage('Pipeline: storefront') {
                                     checkout scm
                                     runFrontendPipeline('storefront')
                                     cleanWs()
@@ -342,7 +342,7 @@ pipeline {
                 cleanupLocalM2Repo(3)
             }
             sh 'rm -f gitleaks'
-            cleanWs() 
+            cleanWs()
         }
         success {
             echo "[SUCCESS] CI Pipeline completed successfully!"
