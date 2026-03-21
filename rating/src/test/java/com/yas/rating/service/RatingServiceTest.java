@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -150,7 +151,11 @@ class RatingServiceTest {
 
         Jwt jwt = mock(Jwt.class);
         JwtAuthenticationToken authentication = mock(JwtAuthenticationToken.class);
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+
         when(authentication.getToken()).thenReturn(jwt);
         when(authentication.getName()).thenReturn(userId);
         when(jwt.getSubject()).thenReturn(userId);
