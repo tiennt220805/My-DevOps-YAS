@@ -65,7 +65,6 @@ def runBackendSnyk(List<String> services) {
         services.each { String service ->
             echo ">>> Snyk scanning: ${service}"
             dir(service) {
-                sh 'chmod +x ./mvnw'
                 if (env.BRANCH_NAME == 'main') {
                     sh "npx snyk monitor --project-name=yas-${service}"
                 }
@@ -161,6 +160,7 @@ pipeline {
                         echo "Downloading Gitleaks..."
                         sh 'curl -ssfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz | tar -xz gitleaks'
                     }
+
                     sh 'chmod +x gitleaks'
 
                     try {
