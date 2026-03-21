@@ -170,8 +170,8 @@ class RatingServiceTest {
         JwtAuthenticationToken authentication = mock(JwtAuthenticationToken.class);
         SecurityContextHolder.getContext().setAuthentication(authentication);
         when(authentication.getToken()).thenReturn(jwt);
-        when(authentication.getName()).thenReturn("");
-        when(jwt.getSubject()).thenReturn("");
+        when(authentication.getName()).thenReturn("system");
+        when(jwt.getSubject()).thenReturn("system");
 
         when(orderService.checkOrderExistsByProductAndUserWithStatus(anyLong())).thenReturn(new OrderExistsByProductAndUserGetVm(true));
 
