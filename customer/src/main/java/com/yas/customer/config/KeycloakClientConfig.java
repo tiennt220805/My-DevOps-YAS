@@ -6,7 +6,7 @@ import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.KeycloakBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-// test
+
 @Configuration
 public class KeycloakClientConfig {
     private final KeycloakPropsConfig keycloakPropsConfig;

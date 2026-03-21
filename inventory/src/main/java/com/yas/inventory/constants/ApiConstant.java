@@ -2,7 +2,7 @@ package com.yas.inventory.constants;
 
 public final class ApiConstant {
     public static final String WAREHOUSE_URL = "/backoffice/warehouses";
-
+// test
     public static final String STOCK_HISTORY_URL = "/backoffice/stocks/histories";
 
     public static final String STOCK_URL = "/backoffice/stocks";
