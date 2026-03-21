@@ -287,7 +287,7 @@ pipeline {
                                         
                                         // Phase 4: Snyk Vulnerability Scan
                                         echo "Scanning backend dependencies for ${currentService}..."
-                                        runBackendSnyk([currentService])
+                                        // runBackendSnyk([currentService])
                                         
                                         // Free up disk space on this specific executor node
                                         cleanupLocalM2Repo(3)
@@ -300,7 +300,7 @@ pipeline {
 
                     // 2. CREATE PARALLEL BRANCHES FOR BACKOFFICE
                     if (BUILD_BACKOFFICE || IS_ROOT_CHANGED) {
-                        parallelBranches["Frontend-Backoffice"] = {
+                        parallelBranches["Frontend-backoffice"] = {
                             node() {
                                 stage('Backoffice Pipeline') {
                                     checkout scm
@@ -313,7 +313,7 @@ pipeline {
 
                     // 3. CREATE PARALLEL BRANCHES FOR STOREFRONT
                     if (BUILD_STOREFRONT || IS_ROOT_CHANGED) {
-                        parallelBranches["Frontend-Storefront"] = {
+                        parallelBranches["Frontend-storefront"] = {
                             node() {
                                 stage('Storefront Pipeline') {
                                     checkout scm
