@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-
+// test
 @Configuration
 @EnableJpaRepositories("com.yas.cart.repository")
 @EntityScan("com.yas.cart.model")
