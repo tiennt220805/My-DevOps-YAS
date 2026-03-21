@@ -6,7 +6,7 @@ import org.springframework.web.client.RestClient;
 
 @Configuration
 public class RestClientConfig {
-
+// test
     @Bean
     public RestClient restClient() {
         return RestClient.builder().build();
