@@ -62,17 +62,14 @@ def runBackendSonarQube(List<String> services) {
  */
 def runBackendSnyk(List<String> services) {
     withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-        def snykHome = tool name: 'snyk-latest', type: 'io.snyk.jenkins.tools.SnykInstallation'
-        def snykCmd = "${snykHome}/snyk-linux"
-
         services.each { String service ->
             echo ">>> Snyk scanning: ${service}"
             dir(service) {
                 sh 'chmod +x ./mvnw'
                 if (env.BRANCH_NAME == 'main') {
-                    sh "${snykCmd} monitor --project-name=yas-${service}"
+                    sh "npx snyk monitor --project-name=yas-${service}"
                 }
-                sh "${snykCmd} test --severity-threshold=high"
+                sh "npx snyk test --severity-threshold=high"
             }
         }
     }
@@ -115,12 +112,10 @@ def runFrontendPipeline(String appName) {
 
         echo "Scanning ${appName} dependencies..."
         withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-            def snykHome = tool name: 'snyk-latest', type: 'io.snyk.jenkins.tools.SnykInstallation'
-            def snykCmd = "${snykHome}/snyk-linux"
             if (env.BRANCH_NAME == 'main') {
-                sh "${snykCmd} monitor --project-name=yas-${appName}"
+                sh "npx snyk monitor --project-name=yas-${appName}"
             }
-            sh "${snykCmd} test --severity-threshold=high"
+            sh "npx snyk test --severity-threshold=high"
         }
 
         echo "Building ${appName} UI..."
@@ -344,7 +339,6 @@ pipeline {
     post {
         always {
             script {
-                // Perform global workspace cleanup
                 cleanupLocalM2Repo(3)
             }
             sh 'rm -f gitleaks'
