@@ -1,17 +1,27 @@
+// These variables maintain the state across different stages of the pipeline
 def CHANGED_SERVICES = ""
 def IS_ROOT_CHANGED = false
 def BUILD_BACKOFFICE = false
 def BUILD_STOREFRONT = false
 
+// List of all valid backend microservices in the monorepo
 def VALID_BACKEND_SERVICES = [
     'media', 'product', 'cart', 'order', 'rating',
     'customer', 'location', 'inventory', 'tax', 'search'
 ]
 
+/**
+ * Determines which backend services to build based on root changes
+ * Returns all services if the root changed, otherwise parses the comma-separated list
+ */
 def resolveBackendServices(boolean isRootChanged, String changedServices) {
     return isRootChanged ? VALID_BACKEND_SERVICES : changedServices.split(',').findAll { it?.trim() }
 }
 
+/**
+ * Processes JaCoCo code coverage reports for the specified services
+ * Configures quality gate thresholds to enforce minimum coverage requirements
+ */
 def processCoverage(List<String> services) {
     services.each { String service ->
         recordCoverage(
@@ -32,6 +42,10 @@ def processCoverage(List<String> services) {
     }
 }
 
+/**
+ * Executes SonarQube static code analysis
+ * Uses a specific local Maven repository within the workspace to avoid cache conflicts
+ */
 def runBackendSonarQube(List<String> services) {
     withSonarQubeEnv('SonarQube-Local') {
         services.each { String service ->
@@ -43,6 +57,9 @@ def runBackendSonarQube(List<String> services) {
     }
 }
 
+/**
+ * Executes Snyk vulnerability scanning for dependencies
+ */
 def runBackendSnyk(List<String> services) {
     withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
         def snykHome = tool name: 'snyk-latest', type: 'io.snyk.jenkins.tools.SnykInstallation'
@@ -61,8 +78,11 @@ def runBackendSnyk(List<String> services) {
     }
 }
 
+/**
+ * Cleans up the local Maven repository (.m2) to prevent disk space exhaustion
+ * Triggers deletion only if the directory exceeds the specified maximum size (in GB)
+ */
 def cleanupLocalM2Repo(int maxSizeGb = 3) {
-    // Keep local Maven cache for speed, but trim aggressively if it grows too large
     sh """
         if [ -d .m2/repository ]; then
             size_mb=\$(du -sm .m2/repository | cut -f1)
@@ -76,6 +96,9 @@ def cleanupLocalM2Repo(int maxSizeGb = 3) {
     """
 }
 
+/**
+ * Executes the standard CI pipeline for Node.js frontend applications
+ */
 def runFrontendPipeline(String appName) {
     dir(appName) {
         echo "Installing ${appName} dependencies..."
@@ -94,6 +117,9 @@ def runFrontendPipeline(String appName) {
         withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
             def snykHome = tool name: 'snyk-latest', type: 'io.snyk.jenkins.tools.SnykInstallation'
             def snykCmd = "${snykHome}/snyk-linux"
+            if (env.BRANCH_NAME == 'main') {
+                sh "${snykCmd} monitor --project-name=yas-${appName}"
+            }
             sh "${snykCmd} test --severity-threshold=high"
         }
 
@@ -103,8 +129,10 @@ def runFrontendPipeline(String appName) {
 }
 
 pipeline {
+    // Execute on any available Jenkins agent
     agent any
 
+    // Define standard build tools configured in Jenkins Global Tool Configuration
     tools {
         maven 'maven3'
         nodejs 'node20'
@@ -113,7 +141,7 @@ pipeline {
     environment {
         // Use local repository within the workspace for faster caching
         MAVEN_OPTS = "-Dmaven.repo.local=.m2/repository"
-        // For Testcontainers to connect to Docker daemon in Jenkins agents
+        // Required for Testcontainers to communicate with the Docker daemon inside Jenkins agents
         TESTCONTAINERS_HOST_OVERRIDE = 'docker'
     }
 
@@ -129,16 +157,15 @@ pipeline {
         }
 
         // --- STAGE 2: SECRET SCAN ---
+        // Scans the repository for accidentally committed secrets/credentials
         stage('Secret Scan') {
             steps {
                 script {
                     echo "Checking for secrets..."
-
                     if (!fileExists('gitleaks')) {
                         echo "Downloading Gitleaks..."
                         sh 'curl -ssfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz | tar -xz gitleaks'
                     }
-
                     sh 'chmod +x gitleaks'
 
                     try {
@@ -152,6 +179,7 @@ pipeline {
         }
 
         // --- STAGE 3: ANALYZE CHANGES ---
+        // Determines exactly which services in the monorepo were modified in this commit/PR
         stage('Analyze Changes') {
             steps {
                 script {
@@ -184,7 +212,6 @@ pipeline {
 
                     def servicesToBuild = [] as LinkedHashSet
 
-                    // Iterate through changed files to detect affected services
                     for (String file in changedFilesList) {
                         if (!file) continue
 
@@ -214,98 +241,100 @@ pipeline {
                         BUILD_STOREFRONT = true
                         CHANGED_SERVICES = ''
                     } else {
-                        // Join with commas for Maven (e.g., "cart,order")
                         CHANGED_SERVICES = servicesToBuild.join(',')
                     }
                     
-                    echo "----- BUILD PLAN -----"
+                    echo "---------- BUILD PLAN ----------"
                     echo "Backend Services: ${IS_ROOT_CHANGED ? 'ALL' : (CHANGED_SERVICES ?: 'N/A')}"
                     echo "Frontend Backoffice: ${BUILD_BACKOFFICE}"
                     echo "Frontend Storefront: ${BUILD_STOREFRONT}"
-                    echo "----------------------"
+                    echo "--------------------------------"
                 }
             }
         }
 
-        // --- STAGE 4: INTEGRATION & VALIDATION ---
+        // --- STAGE 4: DYNAMIC PARALLEL INTEGRATION & VALIDATION ---
+        // Dynamically provisions isolated Jenkins executors to run builds in parallel
         stage('Integration & Validation') {
-            parallel {
-                // Backend Services (Spring Boot)
-                stage('Backend Pipeline') {
-                    when { expression { return IS_ROOT_CHANGED || CHANGED_SERVICES != "" } }
-                    stages {
-                        // --- PHASE 1: BUILD, TEST & COVERAGE ---
-                        stage('Build & Test') {
-                            steps {
-                                script {
-                                    echo "Building, testing and installing artifacts..."
-                                    if (IS_ROOT_CHANGED) {
-                                        sh "mvn clean install jacoco:report"
-                                    } else {
-                                        sh "mvn clean install jacoco:report -pl ${CHANGED_SERVICES} -am"
-                                    }
-                                }
-                            }
-                            post {
-                                always {
-                                    script {
-                                        // Upload test results and code coverage for all affected services
+            steps {
+                script {
+                    def parallelBranches = [:]
+                    def backendServices = resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES)
+
+                    // 1. CREATE PARALLEL BRANCHES FOR BACKEND SERVICES
+                    if (backendServices.size() > 0) {
+                        for (int i = 0; i < backendServices.size(); i++) {
+                            // IMPORTANT: Must bind to a local variable inside the loop for Groovy closures
+                            def currentService = backendServices[i]
+                            
+                            parallelBranches["Backend-${currentService}"] = {
+                                // Request a completely new, isolated Jenkins executor/node
+                                node() { 
+                                    stage("Pipeline: ${currentService}") {
+                                        checkout scm
+                                        
+                                        // Phase 1: Build & Test
+                                        echo "Building and testing ${currentService}..."
+                                        // The '-am' (also make) flag ensures required internal dependencies (like common-library) are built too
+                                        sh "mvn clean install jacoco:report -pl ${currentService} -am"
+                                        
+                                        // Process JUnit test results and JaCoCo coverage reports
                                         junit '**/target/surefire-reports/*.xml'
-                                        processCoverage(resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES))
+                                        processCoverage([currentService])
+                                        
+                                        // Phase 2: SonarQube Analysis
+                                        runBackendSonarQube([currentService])
+                                        
+                                        // Phase 3: Quality Gate Check
+                                        timeout(time: 5, unit: 'MINUTES') {
+                                            waitForQualityGate abortPipeline: true
+                                        }
+                                        
+                                        // Phase 4: Snyk Vulnerability Scan
+                                        echo "Scanning backend dependencies for ${currentService}..."
+                                        runBackendSnyk([currentService])
+                                        
+                                        // Free up disk space on this specific executor node
+                                        cleanupLocalM2Repo(3)
+                                        cleanWs()
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // --- PHASE 2: CODE QUALITY (SONARQUBE) ---
-                        stage('SonarQube Analysis') {
-                            steps {
-                                script {
-                                    echo "Running SonarQube analysis..."
-                                    runBackendSonarQube(resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES))
-                                }
-                            }
-                        }
-
-                        // --- PHASE 3: QUALITY GATE ---
-                        stage("Quality Gate") {
-                            steps {
-                                echo "Checking quality of code..."
-                                timeout(time: 5, unit: 'MINUTES') {
-                                    waitForQualityGate abortPipeline: true
-                                }
-                            }
-                        }
-
-                        // --- PHASE 4: VULNERABILITY SCAN (SNYK) ---
-                        stage('Vulnerability Scan') {
-                            steps {
-                                script {
-                                    echo "Scanning backend dependencies..."
-                                    // runBackendSnyk(resolveBackendServices(IS_ROOT_CHANGED, CHANGED_SERVICES))
+                    // 2. CREATE PARALLEL BRANCHES FOR BACKOFFICE
+                    if (BUILD_BACKOFFICE || IS_ROOT_CHANGED) {
+                        parallelBranches["Frontend-Backoffice"] = {
+                            node() {
+                                stage('Backoffice Pipeline') {
+                                    checkout scm
+                                    runFrontendPipeline('backoffice')
+                                    cleanWs()
                                 }
                             }
                         }
                     }
-                }
 
-                // Frontend Backoffice (NextJS)
-                stage('Backoffice Pipeline') {
-                    when { expression { return BUILD_BACKOFFICE || IS_ROOT_CHANGED } }
-                    steps {
-                        script {
-                            runFrontendPipeline('backoffice')
+                    // 3. CREATE PARALLEL BRANCHES FOR STOREFRONT
+                    if (BUILD_STOREFRONT || IS_ROOT_CHANGED) {
+                        parallelBranches["Frontend-Storefront"] = {
+                            node() {
+                                stage('Storefront Pipeline') {
+                                    checkout scm
+                                    runFrontendPipeline('storefront')
+                                    cleanWs()
+                                }
+                            }
                         }
                     }
-                }
 
-                // Frontend Storefront (NextJS)
-                stage('Storefront Pipeline') {
-                    when { expression { return BUILD_STOREFRONT || IS_ROOT_CHANGED } }
-                    steps {
-                        script {
-                            runFrontendPipeline('storefront')
-                        }
+                    // 4. ACTIVATE EXECUTION OF ALL PIPELINES IN PARALLEL
+                    if (parallelBranches.size() > 0) {
+                        echo "Executing ${parallelBranches.size()} pipelines in parallel..."
+                        parallel parallelBranches
+                    } else {
+                        echo "No services affected. Skipping Validation stage."
                     }
                 }
             }
@@ -315,10 +344,11 @@ pipeline {
     post {
         always {
             script {
+                // Perform global workspace cleanup
                 cleanupLocalM2Repo(3)
             }
             sh 'rm -f gitleaks'
-            cleanWs()
+            cleanWs() 
         }
         success {
             echo "[SUCCESS] CI Pipeline completed successfully!"
