@@ -422,7 +422,7 @@ pipeline {
                         //         // Push lên Docker Hub
                         //         sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${app}:main"
                         //     }
-                        }
+                        // }
                     }
                 }
             }
