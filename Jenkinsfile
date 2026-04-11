@@ -364,62 +364,47 @@ pipeline {
     agent any
 
     tools {
-        // Sử dụng các công cụ đã được cấu hình sẵn trong Jenkins của bạn 
         maven 'maven3'
         nodejs 'node20'
     }
 
     environment {
-        // Thông tin Docker Hub của bạn
         DOCKER_REGISTRY_USER = 'thanhtien2208'
-        // ID của Credential bạn đã tạo trong Jenkins (loại Username with password)
-        DOCKER_CREDENTIALS_ID = 'docker-hub-creds' 
+        DOCKER_CREDENTIALS_ID = 'docker-hub-creds'
+        // FIX LỖI API: Ép Docker dùng phiên bản mà Daemon hỗ trợ
+        DOCKER_API_VERSION = '1.43' 
     }
 
     stages {
         stage('Build & Push All Services') {
             steps {
                 script {
-                    // Danh sách 10 backend services từ file gốc [cite: 1]
                     def backendServices = [
                         'media', 'product', 'cart', 'order', 'rating',
                         'customer', 'location', 'inventory', 'tax', 'search'
                     ]
-
-                    // Danh sách 2 frontend apps từ file gốc [cite: 30]
                     def frontendApps = ['backoffice', 'storefront']
 
-                    // Đăng nhập Docker Hub một lần duy nhất bằng Credentials của Jenkins
+                    // Sử dụng nháy đơn '' cho lệnh sh để tránh lộ mật khẩu (Groovy interpolation) [cite: 12, 15]
                     withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID, usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                        sh "echo ${PASS} | docker login -u ${USER} --password-stdin"
+                        // FIX BẢO MẬT: Dùng $PASS (biến môi trường shell) thay vì ${PASS}
+                        sh 'echo $PASS | docker login -u $USER --password-stdin'
 
-                        // --- PHẦN 1: XỬ LÝ BACKEND (JAVA/MAVEN) ---
+                        // --- PHẦN 1: BACKEND ---
                         backendServices.each { service ->
-                            echo ">>> Đang xử lý Backend: ${service}"
-                            
-                            // Build code Java và bỏ qua Test (-DskipTests) 
-                            // -pl: project list, -am: also make (build phụ thuộc nếu cần)
+                            echo ">>> Xử lý Backend: ${service}"
                             sh "mvn clean package -DskipTests -pl ${service} -am"
-
-                            // Build Docker Image (Ép chuẩn amd64 cho Windows/Linux)
                             sh "docker build --platform linux/amd64 -t ${env.DOCKER_REGISTRY_USER}/yas-${service}:main ./${service}"
-                            
-                            // Push lên Docker Hub
                             sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${service}:main"
                         }
 
-                        // --- PHẦN 2: XỬ LÝ FRONTEND (NODEJS/NPM) ---
+                        // --- PHẦN 2: FRONTEND ---
                         // frontendApps.each { app ->
-                        //     echo ">>> Đang xử lý Frontend: ${app}"
+                        //     echo ">>> Xử lý Frontend: ${app}"
                         //     dir(app) {
-                        //         // Cài đặt dependencies và build UI [cite: 11, 13]
                         //         sh "npm ci"
                         //         sh "npm run build"
-
-                        //         // Build Docker cho Frontend
                         //         sh "docker build --platform linux/amd64 -t ${env.DOCKER_REGISTRY_USER}/yas-${app}:main ."
-                                
-                        //         // Push lên Docker Hub
                         //         sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${app}:main"
                         //     }
                         // }
@@ -431,12 +416,7 @@ pipeline {
 
     post {
         always {
-            // Dọn dẹp workspace sau khi hoàn thành
-            cleanWs()
-            echo "Kết thúc quy trình Build & Push."
-        }
-        success {
-            echo "Chúc mừng Leader! Toàn bộ 12 images đã được đẩy lên Docker Hub thành công."
+            cleanWs() // Dọn dẹp workspace sau khi xong [cite: 54, 62]
         }
     }
 }
