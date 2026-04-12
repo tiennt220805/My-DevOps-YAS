@@ -283,11 +283,11 @@ pipeline {
                                             sh 'echo $PASS | docker login -u $USER --password-stdin'
                                             
                                             // Build code & Docker Image with tag Commit ID
-                                            sh "mvn clean package -DskipTests -pl ${service} -am"
-                                            sh "docker build -t ${env.DOCKER_REGISTRY_USER}/yas-${service}:${SHA} ./${service}"
+                                            sh "mvn clean install -DskipTests -pl ${currentService} -am"
+                                            sh "docker build -t ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA} ./${currentService}"
                                             
                                             // Push to docker-hub
-                                            sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${service}:${SHA}"
+                                            sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA}"
                                         }
                                         
                                         // Free up disk space on this specific executor node
