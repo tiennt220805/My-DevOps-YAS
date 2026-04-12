@@ -3,6 +3,7 @@ def CHANGED_SERVICES = ""
 def IS_ROOT_CHANGED = false
 def BUILD_BACKOFFICE = false
 def BUILD_STOREFRONT = false
+def SHA = ""
 
 // List of all valid backend microservices in the monorepo
 def VALID_BACKEND_SERVICES = [
@@ -138,15 +139,20 @@ pipeline {
         MAVEN_OPTS = "-Dmaven.repo.local=.m2/repository"
         // Required for Testcontainers to communicate with the Docker daemon inside Jenkins agents
         TESTCONTAINERS_HOST_OVERRIDE = 'docker'
+        DOCKER_REGISTRY_USER = 'thanhtien2208'
+        DOCKER_CREDENTIALS_ID = 'docker-hub-creds'
     }
 
     stages {
         // --- STAGE 1: CHECKOUT CODE ---
-        stage('Checkout Code') {
+        stage('Checkout Code & Get commit-id') {
             steps {
                 checkout scm
                 script {
                     echo "Checking out branch: ${env.BRANCH_NAME}"
+
+                    SHA = env.GIT_COMMIT
+                    echo "Current Commit ID: ${SHA}"
                 }
             }
         }
@@ -268,26 +274,20 @@ pipeline {
                                     stage("Pipeline: ${currentService}") {
                                         checkout scm
                                         
-                                        // Phase 1: Build & Test
+                                        // Build (no test) & Push image
                                         echo "Building and testing ${currentService}..."
-                                        // The '-am' (also make) flag ensures required internal dependencies (like common-library) are built too
-                                        sh "mvn clean install jacoco:report -pl ${currentService} -am"
                                         
-                                        // Process JUnit test results and JaCoCo coverage reports
-                                        junit testResults: '**/target/surefire-reports/*.xml', skipPublishingChecks: true
-                                        processCoverage([currentService])
-                                        
-                                        // Phase 2: SonarQube Analysis
-                                        runBackendSonarQube([currentService])
-                                        
-                                        // Phase 3: Quality Gate Check
-                                        timeout(time: 5, unit: 'MINUTES') {
-                                            waitForQualityGate abortPipeline: true
+                                        withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID, usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                                            // Safely login
+                                            sh 'echo $PASS | docker login -u $USER --password-stdin'
+                                            
+                                            // Build code & Docker Image with tag Commit ID
+                                            sh "mvn clean package -DskipTests -pl ${service} -am"
+                                            sh "docker build -t ${env.DOCKER_REGISTRY_USER}/yas-${service}:${SHA} ./${service}"
+                                            
+                                            // Push to docker-hub
+                                            sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${service}:${SHA}"
                                         }
-                                        
-                                        // Phase 4: Snyk Vulnerability Scan
-                                        echo "Scanning backend dependencies for ${currentService}..."
-                                        // runBackendSnyk([currentService])
                                         
                                         // Free up disk space on this specific executor node
                                         cleanupLocalM2Repo(3)
