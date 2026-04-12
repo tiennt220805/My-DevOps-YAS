@@ -141,6 +141,7 @@ pipeline {
         TESTCONTAINERS_HOST_OVERRIDE = 'docker'
         DOCKER_REGISTRY_USER = 'thanhtien2208'
         DOCKER_CREDENTIALS_ID = 'docker-hub-creds'
+        DOCKER_API_VERSION = '1.43'
     }
 
     stages {
