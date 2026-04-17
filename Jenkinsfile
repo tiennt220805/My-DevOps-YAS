@@ -345,6 +345,18 @@ pipeline {
                 }
             }
         }
+
+        stage('Check Tools Success') {
+            agent {
+                docker {
+                    image 'dtzar/helm-kubectl:3.14.0'
+                    args "-u 0 -v /var/jenkins_home/.kube/config-jenkins:/root/.kube/config"
+                }
+            }
+            steps {
+                sh "kubectl get nodes"
+            }
+        }
     }
 
     post {
