@@ -282,12 +282,22 @@ pipeline {
                                             // Safely login
                                             sh 'echo $PASS | docker login -u $USER --password-stdin'
                                             
-                                            // Build code & Docker Image with tag Commit ID
-                                            sh "mvn clean install -DskipTests -pl ${currentService} -am"
-                                            sh "docker build -t ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA} ./${currentService}"
-                                            
-                                            // Push to docker-hub
-                                            sh "docker push ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA}"
+                                            // Build code & Docker Image with tag Commit ID & Push to Docker Hub
+                                            sh """
+                                                mvn clean install -DskipTests -pl ${currentService} -am
+                                                docker build -t ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA} ./${currentService}
+                                                docker push ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA}
+                                            """
+
+                                            if (env.BRANCH_NAME == 'main') {
+                                                echo "Branch main detected. Updating baseline tag..."
+
+                                                // Add more "main" tag for Image & Push to Docker Hub
+                                                sh """
+                                                    docker tag ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:${SHA} ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:main
+                                                    docker push ${env.DOCKER_REGISTRY_USER}/yas-${currentService}:main
+                                                """
+                                            }
                                         }
                                         
                                         // Free up disk space on this specific executor node
