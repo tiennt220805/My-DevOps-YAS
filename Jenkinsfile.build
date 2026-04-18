@@ -83,25 +83,17 @@ pipeline {
     }
 
     environment {
+        SOURCE_REPO_URL = 'https://github.com/tiennt220805/My-DevOps-YAS.git'
         GITOPS_REPO_URL = 'https://github.com/tiennt220805/My-GitOps-YAS.git'
         GITOPS_DIR = 'gitops-yas'
         GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
         CLEAN_JOB_NAME = 'developer_destroy'
-        CLEAN_JOB_URL = ''
-        TEST_NAMESPACE = ''
     }
 
     stages {
         stage('Checkout DevOps Pipeline Repository') {
             steps {
                 checkout scm
-                script {
-                    env.SOURCE_REPO_URL = sh(script: 'git config --get remote.origin.url', returnStdout: true).trim()
-                    if (!env.SOURCE_REPO_URL) {
-                        error('Could not determine source repository URL from git remote.origin.url')
-                    }
-                    echo "Detected source repository: ${env.SOURCE_REPO_URL}"
-                }
             }
         }
 
@@ -153,8 +145,9 @@ pipeline {
         stage('Resolve Namespace') {
             steps {
                 script {
-                    def userCause = currentBuild.rawBuild.getCause(Cause.UserIdCause)
-                    def userId = normalizeName(userCause?.getUserId() ?: 'anonymous')
+                    def causes = currentBuild.getBuildCauses()
+                    def rawUserId = causes.find { it.userId }?.userId ?: 'anonymous'
+                    def userId = normalizeName(rawUserId)
 
                     def suffix = NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join('-') : 'baseline'
                     suffix = normalizeName(suffix)
@@ -181,7 +174,7 @@ pipeline {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
                             rm -rf ${GITOPS_DIR}
-                            git clone --depth 1 https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                            git clone --depth 1 https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
                         """
                     }
                 }
@@ -199,23 +192,23 @@ pipeline {
                 dir("${env.GITOPS_DIR}") {
                     sh """
                         helm upgrade --install postgres infrastructure/base/postgres/postgresql \
-                          -n ${TEST_NAMESPACE} \
+                          -n ${env.TEST_NAMESPACE} \
                           -f environments/test/values-shared.yaml
 
                         helm upgrade --install redis infrastructure/base/redis \
-                          -n ${TEST_NAMESPACE} \
+                          -n ${env.TEST_NAMESPACE} \
                           -f environments/test/values-shared.yaml
 
                         helm upgrade --install kafka infrastructure/base/kafka/kafka-cluster \
-                          -n ${TEST_NAMESPACE} \
+                          -n ${env.TEST_NAMESPACE} \
                           -f environments/test/values-shared.yaml
 
                         helm upgrade --install elasticsearch infrastructure/base/elasticsearch/elasticsearch-cluster \
-                          -n ${TEST_NAMESPACE} \
+                          -n ${env.TEST_NAMESPACE} \
                           -f environments/test/values-shared.yaml
 
                         helm upgrade --install keycloak infrastructure/base/keycloak/keycloak \
-                          -n ${TEST_NAMESPACE} \
+                          -n ${env.TEST_NAMESPACE} \
                           -f environments/test/values-shared.yaml
                     """
                 }
@@ -227,7 +220,7 @@ pipeline {
                 dir("${env.GITOPS_DIR}") {
                     sh """
                         helm upgrade --install yas-configuration charts/yas-configuration \
-                          -n ${TEST_NAMESPACE} \
+                          -n ${env.TEST_NAMESPACE} \
                           -f environments/test/values-shared.yaml
                     """
                 }
@@ -249,7 +242,7 @@ pipeline {
                             if (resolvedTag == 'main') {
                                 sh """
                                     helm upgrade --install ${service} charts/${service} \
-                                      -n ${TEST_NAMESPACE} \
+                                      -n ${env.TEST_NAMESPACE} \
                                       -f environments/test/values-shared.yaml \
                                       --set backend.image.tag=${resolvedTag} \
                                       --wait \
@@ -258,7 +251,7 @@ pipeline {
                             } else {
                                 sh """
                                     helm upgrade --install ${service} charts/${service} \
-                                      -n ${TEST_NAMESPACE} \
+                                      -n ${env.TEST_NAMESPACE} \
                                       -f environments/test/values-shared.yaml \
                                       --set backend.image.tag=${resolvedTag} \
                                       --set backend.service.type=NodePort \
@@ -266,7 +259,7 @@ pipeline {
                                       --timeout 2m
                                 """
 
-                                def nodePort = sh(script: "kubectl get svc ${service} -n ${TEST_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'", returnStdout: true).trim()
+                                def nodePort = sh(script: "kubectl get svc ${service} -n ${env.TEST_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'", returnStdout: true).trim()
                                 def testDomain = "yas.test.com" 
                                 echo "Service ${service} (branch: ${branchName}, image tag: ${resolvedTag}) is accessible at: http://${testDomain}:${nodePort}"
                             }
@@ -280,6 +273,7 @@ pipeline {
             steps {
                 echo "Test namespace created: ${env.TEST_NAMESPACE}"
                 echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
+                echo "Ensure you have the domain added to your /etc/hosts (e.g., 127.0.0.1 yas.test.com)"
             }
         }
     }
