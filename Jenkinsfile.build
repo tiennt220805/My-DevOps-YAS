@@ -1,0 +1,292 @@
+import hudson.model.Cause
+
+def SERVICE_PARAM_MAP = [
+    cart     : 'TAG_CART',
+    tax      : 'TAG_TAX',
+    order    : 'TAG_ORDER',
+    product  : 'TAG_PRODUCT',
+    media    : 'TAG_MEDIA',
+    rating   : 'TAG_RATING',
+    customer : 'TAG_CUSTOMER',
+    location : 'TAG_LOCATION',
+    inventory: 'TAG_INVENTORY',
+    search   : 'TAG_SEARCH'
+]
+
+def RESOLVED_BRANCH_BY_SERVICE = [:]
+def RESOLVED_TAG_BY_SERVICE = [:]
+def NON_MAIN_SERVICES = []
+
+def normalizeName(String input) {
+    return input.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')
+}
+
+def normalizeBranchInput(String rawValue) {
+    def value = (rawValue ?: 'main').trim()
+    if (!value) {
+        return 'main'
+    }
+
+    value = value.replaceFirst('^refs/heads/', '')
+    value = value.replaceFirst('^origin/', '')
+    return value
+}
+
+def validateBranchName(String branchName) {
+    if (branchName == 'main') {
+        return
+    }
+
+    if (!(branchName ==~ /^[A-Za-z0-9._\/-]+$/)) {
+        error("Invalid branch name '${branchName}'. Allowed characters: letters, numbers, '.', '_', '-', '/'.")
+    }
+}
+
+def resolveBranchToShortCommit(String repositoryUrl, String branchName) {
+    validateBranchName(branchName)
+
+    if (branchName == 'main') {
+        return 'main'
+    }
+
+    def output = sh(
+        script: "git ls-remote --heads '${repositoryUrl}' 'refs/heads/${branchName}'",
+        returnStdout: true
+    ).trim()
+
+    if (!output) {
+        error("Branch '${branchName}' does not exist in source repository: ${repositoryUrl}")
+    }
+
+    def commitSha = output.tokenize()[0]
+    if (!commitSha || commitSha.length() < 8) {
+        error("Could not resolve a valid commit SHA for branch '${branchName}'.")
+    }
+
+    return commitSha.take(8)
+}
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'TAG_CART', defaultValue: 'main', description: 'Input branch name for cart (e.g. main, feature/cart)')
+        string(name: 'TAG_TAX', defaultValue: 'main', description: 'Input branch name for tax (e.g. main, feature/tax)')
+        string(name: 'TAG_ORDER', defaultValue: 'main', description: 'Input branch name for order (e.g. main, feature/order)')
+        string(name: 'TAG_PRODUCT', defaultValue: 'main', description: 'Input branch name for product (e.g. main, feature/product)')
+        string(name: 'TAG_MEDIA', defaultValue: 'main', description: 'Input branch name for media (e.g. main, feature/media)')
+        string(name: 'TAG_RATING', defaultValue: 'main', description: 'Input branch name for rating (e.g. main, feature/rating)')
+        string(name: 'TAG_CUSTOMER', defaultValue: 'main', description: 'Input branch name for customer (e.g. main, feature/customer)')
+        string(name: 'TAG_LOCATION', defaultValue: 'main', description: 'Input branch name for location (e.g. main, feature/location)')
+        string(name: 'TAG_INVENTORY', defaultValue: 'main', description: 'Input branch name for inventory (e.g. main, feature/inventory)')
+        string(name: 'TAG_SEARCH', defaultValue: 'main', description: 'Input branch name for search (e.g. main, feature/search)')
+    }
+
+    environment {
+        GITOPS_REPO_URL = 'https://github.com/tiennt220805/My-GitOps-YAS.git'
+        GITOPS_DIR = 'gitops-yas'
+        GITOPS_TOKEN_CREDENTIALS_ID = 'gitops-token'
+        CLEAN_JOB_NAME = 'developer_destroy'
+        CLEAN_JOB_URL = ''
+        TEST_NAMESPACE = ''
+    }
+
+    stages {
+        stage('Checkout DevOps Pipeline Repository') {
+            steps {
+                checkout scm
+                script {
+                    env.SOURCE_REPO_URL = sh(script: 'git config --get remote.origin.url', returnStdout: true).trim()
+                    if (!env.SOURCE_REPO_URL) {
+                        error('Could not determine source repository URL from git remote.origin.url')
+                    }
+                    echo "Detected source repository: ${env.SOURCE_REPO_URL}"
+                }
+            }
+        }
+
+        stage('Resolve Branch Inputs To Image Tags') {
+            steps {
+                script {
+                    def branchToServices = [:]
+
+                    SERVICE_PARAM_MAP.each { service, paramName ->
+                        def normalizedBranch = normalizeBranchInput(params[paramName])
+                        RESOLVED_BRANCH_BY_SERVICE[service] = normalizedBranch
+
+                        if (normalizedBranch != 'main') {
+                            NON_MAIN_SERVICES << service
+                        }
+
+                        if (!branchToServices.containsKey(normalizedBranch)) {
+                            branchToServices[normalizedBranch] = []
+                        }
+                        branchToServices[normalizedBranch] << service
+                    }
+
+                    def branchToTag = ['main': 'main']
+                    branchToServices.each { branchName, services ->
+                        if (branchName == 'main') {
+                            return
+                        }
+
+                        try {
+                            def shortCommit = resolveBranchToShortCommit(env.SOURCE_REPO_URL, branchName)
+                            branchToTag[branchName] = shortCommit
+                            echo "Resolved branch '${branchName}' -> image tag '${shortCommit}' for services: ${services.join(', ')}"
+                        } catch (Exception e) {
+                            error("Failed to resolve branch '${branchName}' for services [${services.join(', ')}]. ${e.getMessage()}")
+                        }
+                    }
+
+                    SERVICE_PARAM_MAP.keySet().each { service ->
+                        def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
+                        RESOLVED_TAG_BY_SERVICE[service] = branchToTag[branchName]
+                    }
+
+                    echo "Final service -> branch map: ${RESOLVED_BRANCH_BY_SERVICE}"
+                    echo "Final service -> image tag map: ${RESOLVED_TAG_BY_SERVICE}"
+                }
+            }
+        }
+
+        stage('Resolve Namespace') {
+            steps {
+                script {
+                    def userCause = currentBuild.rawBuild.getCause(Cause.UserIdCause)
+                    def userId = normalizeName(userCause?.getUserId() ?: 'anonymous')
+
+                    def suffix = NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join('-') : 'baseline'
+                    suffix = normalizeName(suffix)
+
+                    def namespace = normalizeName("test-${userId}-${suffix}")
+                    if (namespace.length() > 63) {
+                        namespace = namespace.take(63).replaceAll('-+$', '')
+                    }
+
+                    env.TEST_NAMESPACE = namespace
+                    env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/parambuild/?TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
+
+                    echo "Resolved Jenkins user id: ${userId}"
+                    echo "Changed services: ${NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join(', ') : 'none'}"
+                    echo "Generated namespace: ${env.TEST_NAMESPACE}"
+                }
+            }
+        }
+
+        stage('Clone GitOps-YAS (Read-only)') {
+            steps {
+                withCredentials([string(credentialsId: env.GITOPS_TOKEN_CREDENTIALS_ID, variable: 'GITOPS_TOKEN')]) {
+                    script {
+                        def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
+                        sh """
+                            rm -rf ${GITOPS_DIR}
+                            git clone --depth 1 https://x-access-token:${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Create Namespace') {
+            steps {
+                sh "kubectl create namespace ${env.TEST_NAMESPACE} || true"
+            }
+        }
+
+        stage('Deploy Base Infrastructure') {
+            steps {
+                dir("${env.GITOPS_DIR}") {
+                    sh """
+                        helm upgrade --install postgres infrastructure/base/postgres/postgresql \
+                          -n ${TEST_NAMESPACE} \
+                          -f environments/test/values-shared.yaml
+
+                        helm upgrade --install redis infrastructure/base/redis \
+                          -n ${TEST_NAMESPACE} \
+                          -f environments/test/values-shared.yaml
+
+                        helm upgrade --install kafka infrastructure/base/kafka/kafka-cluster \
+                          -n ${TEST_NAMESPACE} \
+                          -f environments/test/values-shared.yaml
+
+                        helm upgrade --install elasticsearch infrastructure/base/elasticsearch/elasticsearch-cluster \
+                          -n ${TEST_NAMESPACE} \
+                          -f environments/test/values-shared.yaml
+
+                        helm upgrade --install keycloak infrastructure/base/keycloak/keycloak \
+                          -n ${TEST_NAMESPACE} \
+                          -f environments/test/values-shared.yaml
+                    """
+                }
+            }
+        }
+
+        stage('Deploy Shared App Configuration') {
+            steps {
+                dir("${env.GITOPS_DIR}") {
+                    sh """
+                        helm upgrade --install yas-configuration charts/yas-configuration \
+                          -n ${TEST_NAMESPACE} \
+                          -f environments/test/values-shared.yaml
+                    """
+                }
+            }
+        }
+
+        stage('Deploy Services') {
+            steps {
+                script {
+                    dir("${env.GITOPS_DIR}") {
+                        SERVICE_PARAM_MAP.each { service, _ ->
+                            def resolvedTag = RESOLVED_TAG_BY_SERVICE[service]
+                            def branchName = RESOLVED_BRANCH_BY_SERVICE[service]
+
+                            if (!resolvedTag) {
+                                error("Missing resolved tag for service '${service}'.")
+                            }
+
+                            if (resolvedTag == 'main') {
+                                sh """
+                                    helm upgrade --install ${service} charts/${service} \
+                                      -n ${TEST_NAMESPACE} \
+                                      -f environments/test/values-shared.yaml \
+                                      --set backend.image.tag=${resolvedTag} \
+                                      --wait \
+                                      --timeout 2m
+                                """
+                            } else {
+                                sh """
+                                    helm upgrade --install ${service} charts/${service} \
+                                      -n ${TEST_NAMESPACE} \
+                                      -f environments/test/values-shared.yaml \
+                                      --set backend.image.tag=${resolvedTag} \
+                                      --set backend.service.type=NodePort \
+                                      --wait \
+                                      --timeout 2m
+                                """
+
+                                def nodePort = sh(script: "kubectl get svc ${service} -n ${TEST_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'", returnStdout: true).trim()
+                                def testDomain = "yas.test.com" 
+                                echo "Service ${service} (branch: ${branchName}, image tag: ${resolvedTag}) is accessible at: http://${testDomain}:${nodePort}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Output Cleanup URL') {
+            steps {
+                echo "Test namespace created: ${env.TEST_NAMESPACE}"
+                echo "To clean up this environment, simply click here: ${env.CLEAN_JOB_URL}"
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
