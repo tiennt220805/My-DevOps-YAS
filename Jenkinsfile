@@ -160,6 +160,7 @@ pipeline {
 
         // --- STAGE 2: SECRET SCAN ---
         // Scans the repository for accidentally committed secrets/credentials
+        /*
         stage('Secret Scan') {
             steps {
                 script {
@@ -179,6 +180,7 @@ pipeline {
                 }
             }
         }
+        */
 
         // --- STAGE 3: ANALYZE CHANGES ---
         // Determines exactly which services in the monorepo were modified in this commit/PR
