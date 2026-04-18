@@ -345,6 +345,15 @@ pipeline {
                 }
             }
         }
+
+        stage('Check Tools Success') {
+            steps {
+                script {
+                    sh "kubectl get nodes"
+                    sh "helm version"
+                }
+            }
+        }
     }
 
     post {
