@@ -152,7 +152,7 @@ pipeline {
                 script {
                     echo "Checking out branch: ${env.BRANCH_NAME}"
 
-                    SHA = env.GIT_COMMIT.take(7)
+                    SHA = env.GIT_COMMIT.take(8)
                     echo "Current Commit ID: ${SHA}"
                 }
             }
