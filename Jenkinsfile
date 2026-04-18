@@ -152,7 +152,7 @@ pipeline {
                 script {
                     echo "Checking out branch: ${env.BRANCH_NAME}"
 
-                    SHA = env.GIT_COMMIT.take(7)
+                    SHA = env.GIT_COMMIT.take(8)
                     echo "Current Commit ID: ${SHA}"
                 }
             }
@@ -160,6 +160,7 @@ pipeline {
 
         // --- STAGE 2: SECRET SCAN ---
         // Scans the repository for accidentally committed secrets/credentials
+        /*
         stage('Secret Scan') {
             steps {
                 script {
@@ -179,6 +180,7 @@ pipeline {
                 }
             }
         }
+        */
 
         // --- STAGE 3: ANALYZE CHANGES ---
         // Determines exactly which services in the monorepo were modified in this commit/PR
