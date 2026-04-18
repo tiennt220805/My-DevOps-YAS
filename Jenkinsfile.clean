@@ -1,0 +1,25 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'TARGET_NAMESPACE', defaultValue: '', description: 'Namespace to delete (e.g. test-<user>-<services>)')
+    }
+
+    stages {
+        stage('Validate Input') {
+            steps {
+                script {
+                    if (!params.TARGET_NAMESPACE?.trim()) {
+                        error('TARGET_NAMESPACE is required')
+                    }
+                }
+            }
+        }
+
+        stage('Delete Namespace') {
+            steps {
+                sh "kubectl delete namespace ${params.TARGET_NAMESPACE}"
+            }
+        }
+    }
+}
