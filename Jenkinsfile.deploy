@@ -50,32 +50,33 @@ pipeline {
 
         stage('Resolve Namespace') {
             steps {
-                script {
-                    def userCause = currentBuild.rawBuild.getCause(Cause.UserIdCause)
-                    def userId = normalizeName(userCause?.getUserId() ?: 'anonymous')
+                wrap([$class: 'BuildUser']) {
+                    script {
+                        def userId = normalizeName(env.BUILD_USER_ID ?: 'anonymous')
 
-                    def changedServices = []
-                    SERVICE_PARAM_MAP.each { service, paramName ->
-                        def tagValue = (params[paramName] ?: 'main').trim()
-                        if (tagValue != 'main') {
-                            changedServices << service
+                        def changedServices = []
+                        SERVICE_PARAM_MAP.each { service, paramName ->
+                            def tagValue = (params[paramName] ?: 'main').trim()
+                            if (tagValue != 'main') {
+                                changedServices << service
+                            }
                         }
+
+                        def suffix = changedServices ? changedServices.join('-') : 'baseline'
+                        suffix = normalizeName(suffix)
+
+                        def namespace = normalizeName("test-${userId}-${suffix}")
+                        if (namespace.length() > 63) {
+                            namespace = namespace.take(63).replaceAll('-+$', '')
+                        }
+
+                        env.TEST_NAMESPACE = namespace
+                        env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/parambuild/?TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
+
+                        echo "Resolved Jenkins user id: ${userId}"
+                        echo "Changed services: ${changedServices ? changedServices.join(', ') : 'none'}"
+                        echo "Generated namespace: ${env.TEST_NAMESPACE}"
                     }
-
-                    def suffix = changedServices ? changedServices.join('-') : 'baseline'
-                    suffix = normalizeName(suffix)
-
-                    def namespace = normalizeName("test-${userId}-${suffix}")
-                    if (namespace.length() > 63) {
-                        namespace = namespace.take(63).replaceAll('-+$', '')
-                    }
-
-                    env.TEST_NAMESPACE = namespace
-                    env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/parambuild/?TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
-
-                    echo "Resolved Jenkins user id: ${userId}"
-                    echo "Changed services: ${changedServices ? changedServices.join(', ') : 'none'}"
-                    echo "Generated namespace: ${env.TEST_NAMESPACE}"
                 }
             }
         }
