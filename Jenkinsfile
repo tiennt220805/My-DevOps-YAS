@@ -347,15 +347,11 @@ pipeline {
         }
 
         stage('Check Tools Success') {
-            agent {
-                docker {
-                    image 'dtzar/helm-kubectl:3.14.0'
-                    args "-u 0 -v /home/tiennt220805/.kube/config-jenkins:/root/.kube/config:ro"
-                }
-            }
             steps {
-                sh "kubectl get nodes"
-                sh "helm version"
+                script {
+                    sh "kubectl get nodes"
+                    sh "helm version"
+                }
             }
         }
     }
