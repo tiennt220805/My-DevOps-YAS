@@ -37,6 +37,7 @@ pipeline {
         GITOPS_REPO_URL = 'https://github.com/tiennt220805/My-GitOps-YAS.git'
         GITOPS_DIR = 'gitops-yas'
         TEST_NAMESPACE = ''
+        CLEAN_JOB_NAME = 'developer_cleanup'
         CLEAN_JOB_URL = ''
     }
 
@@ -70,7 +71,7 @@ pipeline {
                     }
 
                     env.TEST_NAMESPACE = namespace
-                    env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/Clean_Test_Environment/parambuild/?TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
+                    env.CLEAN_JOB_URL = "${env.JENKINS_URL}job/${env.CLEAN_JOB_NAME}/parambuild/?TARGET_NAMESPACE=${env.TEST_NAMESPACE}"
 
                     echo "Resolved Jenkins user id: ${userId}"
                     echo "Changed services: ${changedServices ? changedServices.join(', ') : 'none'}"
