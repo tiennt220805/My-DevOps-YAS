@@ -172,6 +172,32 @@ pipeline {
             }
         }
 
+        stage('Bootstrap Operators & CRDs') {
+            steps {
+                dir("${env.GITOPS_DIR}/infrastructure/scripts") {
+                    script {
+                        sh "chmod +x *.sh"
+
+                        def postgresCRD = sh(script: "kubectl get crd postgresqls.acid.zalan.do --ignore-not-found", returnStdout: true).trim()
+                        
+                        if (!postgresCRD) {
+                            echo "Operators not found. Initializing the cluster..."
+                            // Run the main script to install Operators (Postgres, Kafka, Elastic)
+                            sh "./setup-cluster.sh"
+                            
+                            // Run the script to install CRDs for Keycloak & Redis
+                            sh """
+                                ./setup-keycloak.sh
+                                ./setup-redis.sh
+                            """
+                        } else {
+                            echo "Operators and CRDs are already available. Skipping bootstrap step."
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Deploy Base Infrastructure') {
             steps {
                 dir("${env.GITOPS_DIR}") {
