@@ -17,21 +17,6 @@ def RESOLVED_BRANCH_BY_SERVICE = [:]
 def RESOLVED_TAG_BY_SERVICE = [:]
 def NON_MAIN_SERVICES = []
 
-def normalizeName(String input) {
-    return input.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')
-}
-
-def normalizeBranchInput(String rawValue) {
-    def value = (rawValue ?: 'main').trim()
-    if (!value) {
-        return 'main'
-    }
-
-    value = value.replaceFirst('^refs/heads/', '')
-    value = value.replaceFirst('^origin/', '')
-    return value
-}
-
 def validateBranchName(String branchName) {
     if (branchName == 'main') {
         return
@@ -147,12 +132,12 @@ pipeline {
                 script {
                     def causes = currentBuild.getBuildCauses()
                     def rawUserId = causes.find { it.userId }?.userId ?: 'anonymous'
-                    def userId = normalizeName(rawUserId)
+                    def userId = this.normalizeName(rawUserId)
 
                     def suffix = NON_MAIN_SERVICES ? NON_MAIN_SERVICES.join('-') : 'baseline'
-                    suffix = normalizeName(suffix)
+                    suffix = this.normalizeName(suffix)
 
-                    def namespace = normalizeName("test-${userId}-${suffix}")
+                    def namespace = this.normalizeName("test-${userId}-${suffix}")
                     if (namespace.length() > 63) {
                         namespace = namespace.take(63).replaceAll('-+$', '')
                     }
@@ -173,8 +158,8 @@ pipeline {
                     script {
                         def repoNoProtocol = env.GITOPS_REPO_URL.replaceFirst('https://', '')
                         sh """
-                            rm -rf ${GITOPS_DIR}
-                            git clone --depth 1 https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${GITOPS_DIR}
+                            rm -rf ${env.GITOPS_DIR}
+                            git clone --depth 1 https://x-access-token:\${GITOPS_TOKEN}@${repoNoProtocol} ${env.GITOPS_DIR}
                         """
                     }
                 }
@@ -283,4 +268,24 @@ pipeline {
             cleanWs()
         }
     }
+}
+
+def normalizeName(input) {
+    def val = (input == null || input.toString() == "null") ? "anonymous" : input.toString()
+    
+    return val.toLowerCase()
+              .replaceAll('[^a-z0-9-]', '-')
+              .replaceAll('-+', '-')
+              .replaceAll('^-|-$', '')
+}
+
+def normalizeBranchInput(rawValue) {
+    def value = (rawValue ?: 'main').trim()
+    if (!value) {
+        return 'main'
+    }
+
+    value = value.replaceFirst('^refs/heads/', '')
+    value = value.replaceFirst('^origin/', '')
+    return value
 }
